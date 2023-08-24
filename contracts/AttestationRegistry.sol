@@ -2,10 +2,10 @@
 pragma solidity 0.8.21;
 
 import { OwnableUpgradeable } from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
-import { Attestation } from "./types/Structs.sol";
-import { AttestationPayload } from "./types/Structs.sol";
+import { Attestation, AttestationPayload } from "./types/Structs.sol";
 import { PortalRegistry } from "./PortalRegistry.sol";
 import { SchemaRegistry } from "./SchemaRegistry.sol";
+import { IRouter } from "./interface/IRouter.sol";
 
 /**
  * @title Attestation Registry
@@ -13,8 +13,7 @@ import { SchemaRegistry } from "./SchemaRegistry.sol";
  * @notice This contract stores a registry of all attestations
  */
 contract AttestationRegistry is OwnableUpgradeable {
-  PortalRegistry public portalRegistry;
-  SchemaRegistry public schemaRegistry;
+  IRouter public router;
 
   mapping(bytes32 attestationId => Attestation attestation) private attestations;
 
@@ -26,10 +25,8 @@ contract AttestationRegistry is OwnableUpgradeable {
 
   /// @notice Error thrown when a non-portal tries to call a method that can only be called by a portal
   error OnlyPortal();
-  /// @notice Error thrown when an invalid PortalRegistry address is given
-  error PortalRegistryInvalid();
-  /// @notice Error thrown when an invalid SchemaRegistry address is given
-  error SchemaRegistryInvalid();
+  /// @notice Error thrown when an invalid Router address is given
+  error RouterInvalid();
   /// @notice Error thrown when a portal is not registered in the PortalRegistry
   error PortalNotRegistered();
   /// @notice Error thrown when an attestation is already registered in the AttestationRegistry
@@ -58,25 +55,34 @@ contract AttestationRegistry is OwnableUpgradeable {
    * @param portal the portal address
    */
   modifier onlyPortals(address portal) {
-    bool isPortalRegistered = portalRegistry.isRegistered(portal);
+    bool isPortalRegistered = PortalRegistry(router.getPortalRegistry()).isRegistered(portal);
     if (!isPortalRegistered) revert OnlyPortal();
     _;
+  }
+
+  /// @custom:oz-upgrades-unsafe-allow constructor
+  constructor() {
+    _disableInitializers();
   }
 
   /**
    * @notice Contract initialization
    */
-  function initialize(address _portalRegistry, address _schemaRegistry) public initializer {
+  function initialize() public initializer {
     __Ownable_init();
-    if (_portalRegistry == address(0)) revert PortalRegistryInvalid();
-    if (_schemaRegistry == address(0)) revert SchemaRegistryInvalid();
-    portalRegistry = PortalRegistry(_portalRegistry);
-    schemaRegistry = SchemaRegistry(_schemaRegistry);
+  }
+
+  /**
+   * @notice Changes the address for the Router
+   */
+  function updateRouter(address _router) public onlyOwner {
+    if (_router == address(0)) revert RouterInvalid();
+    router = IRouter(_router);
   }
 
   /**
    * @notice Registers an attestation to the AttestationRegistry
-   * @param attestationPayload the schema identifier
+   * @param attestationPayload the attestation to register
    * @dev This method is only callable by a registered Portal
    */
   function attest(AttestationPayload memory attestationPayload) external onlyPortals(msg.sender) {
@@ -88,7 +94,7 @@ contract AttestationRegistry is OwnableUpgradeable {
     attestation.attestationData = attestationPayload.attestationData;
 
     // verify the schema id exists
-    if (!schemaRegistry.isRegistered(attestation.schemaId)) revert SchemaNotRegistered();
+    // if (!schemaRegistry.isRegistered(attestation.schemaId)) revert SchemaNotRegistered();
 
     // the subject field is not blank (or is of minimum length - 8 bytes?)
     if (attestation.subject.length == 0) revert EmptyAttestationSubjectField();
@@ -118,7 +124,10 @@ contract AttestationRegistry is OwnableUpgradeable {
 
     currentAttestationId = attestation.attestationId;
 
+    if (isRegistered(attestation.attestationId)) revert AttestationAlreadyAttested();
+
     attestations[attestation.attestationId] = attestation;
+
     emit AttestationRegistered(attestation);
   }
 

@@ -1,29 +1,33 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity 0.8.21;
 
-import { Initializable } from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
-import { ERC165Checker } from "@openzeppelin/contracts/utils/introspection/ERC165Checker.sol";
+import { OwnableUpgradeable } from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+// solhint-disable-next-line max-line-length
+import { ERC165CheckerUpgradeable } from "@openzeppelin/contracts-upgradeable/utils/introspection/ERC165CheckerUpgradeable.sol";
 import { AbstractPortal } from "./interface/AbstractPortal.sol";
 import { DefaultPortal } from "./portal/DefaultPortal.sol";
 import { Portal } from "./types/Structs.sol";
+import { IRouter } from "./interface/IRouter.sol";
 
 /**
  * @title Portal Registry
  * @author Consensys
  * @notice This contract aims to manage the Portals used by attestation issuers
  */
-contract PortalRegistry is Initializable {
-  mapping(address id => Portal portal) private portals;
-  address[] private portalAddresses;
-  address public moduleRegistry;
-  address public attestationRegistry;
-  address public schemaRegistry;
+contract PortalRegistry is OwnableUpgradeable {
+  IRouter public router;
 
-  /// @notice Error thown when attempting to register a Portal twice
+  mapping(address id => Portal portal) private portals;
+
+  address[] private portalAddresses;
+
+  /// @notice Error thrown when an invalid Router address is given
+  error RouterInvalid();
+  /// @notice Error thrown when attempting to register a Portal twice
   error PortalAlreadyExists();
   /// @notice Error thrown when attempting to register a Portal that is not a smart contract
   error PortalAddressInvalid();
-  /// @notice Error thown when attempting to register a Portal with an empty name
+  /// @notice Error thrown when attempting to register a Portal with an empty name
   error PortalNameMissing();
   /// @notice Error thrown when attempting to register a Portal with an empty description
   error PortalDescriptionMissing();
@@ -35,17 +39,24 @@ contract PortalRegistry is Initializable {
   /// @notice Event emitted when a Portal registered
   event PortalRegistered(string name, string description, address moduleAddress);
 
+  /// @custom:oz-upgrades-unsafe-allow constructor
+  constructor() {
+    _disableInitializers();
+  }
+
   /**
    * @notice Contract initialization
    */
-  function initialize(
-    address _moduleRegistry,
-    address _attestationRegistry,
-    address _schemaRegistry
-  ) public initializer {
-    moduleRegistry = _moduleRegistry;
-    attestationRegistry = _attestationRegistry;
-    schemaRegistry = _schemaRegistry;
+  function initialize() public initializer {
+    __Ownable_init();
+  }
+
+  /**
+   * @notice Changes the address for the Router
+   */
+  function updateRouter(address _router) public onlyOwner {
+    if (_router == address(0)) revert RouterInvalid();
+    router = IRouter(_router);
   }
 
   /**
@@ -68,7 +79,7 @@ contract PortalRegistry is Initializable {
     if (bytes(description).length == 0) revert PortalDescriptionMissing();
 
     // Check if portal has implemented IPortal
-    if (!ERC165Checker.supportsInterface(id, type(AbstractPortal).interfaceId)) revert PortalInvalid();
+    if (!ERC165CheckerUpgradeable.supportsInterface(id, type(AbstractPortal).interfaceId)) revert PortalInvalid();
 
     // Get the array of modules implemented by the portal
     address[] memory modules = AbstractPortal(id).getModules();
@@ -90,7 +101,7 @@ contract PortalRegistry is Initializable {
    */
   function deployDefaultPortal(address[] calldata modules, string memory name, string memory description) external {
     DefaultPortal defaultPortal = new DefaultPortal();
-    defaultPortal.initialize(modules, moduleRegistry, attestationRegistry, schemaRegistry);
+    defaultPortal.initialize(modules, router.getModuleRegistry(), router.getAttestationRegistry());
     register(address(defaultPortal), name, description);
   }
 

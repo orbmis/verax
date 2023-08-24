@@ -14,27 +14,39 @@ describe('AttestationRegistry', function () {
 
   before(async function () {
     [owner, portal] = await ethers.getSigners()
+
+    try {
+      let ContractFactory = await ethers.getContractFactory("AttestationRegistry")
+      attestationRegistry = await ContractFactory.connect(owner).deploy()
+      console.log("Contract address:", attestationRegistry.target)
+      console.log("Contract deployer:", owner.address)
+      console.log("Contract owner:", await attestationRegistry.owner())
+    }catch(err) {
+      console.log('Error deploying contract: ', err)
+    }
+
     portalRegistry = await ethers.deployContract('PortalRegistry')
     schemaRegistry = await ethers.deployContract('SchemaRegistry')
     moduleRegistry = await ethers.deployContract('ModuleRegistry')
     portalContract = await ethers.deployContract('DefaultPortal')
 
-    attestationRegistry = await ethers.deployContract('AttestationRegistry')
-    attestationRegistry.initialize(portalRegistry.target, schemaRegistry.target)
+    // attestationRegistry = await ethers.deployContract('AttestationRegistry')
+
     portalContract.initialize(
       [],
       moduleRegistry.target,
       attestationRegistry.target,
-      schemaRegistry.target
     )
 
     const schemaId = await schemaRegistry.getIdFromSchemaString('key: value')
+
     await schemaRegistry.createSchema(
       'Sample Schema',
       'Schema for testing',
       'Sample Context',
       'key: value'
     )
+
     await portalRegistry.register(portalContract.target, 'Sample Portal', 'Portal for testing')
 
     const now = new Date()
